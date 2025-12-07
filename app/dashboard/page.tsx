@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import AdminView from './admin-view'
 import SellerView from './seller-view'
+import ActivityFeed from './activity-feed'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -14,9 +15,11 @@ export default async function DashboardPage() {
 
   const { data: products } = await supabase.from('products').select('*').order('name')
   const { data: allUsers } = await supabase.from('profiles').select('id, name, email').neq('id', user.id)
+  
+  // Get recent transactions for everyone to see activity
+  const { data: transactions } = await supabase.from('transactions').select('*, products(name), profiles(name)').order('created_at', { ascending: false }).limit(20)
 
   if (profile.role === 'admin') {
-    const { data: transactions } = await supabase.from('transactions').select('*, products(name), profiles(name)').order('created_at', { ascending: false }).limit(50)
     return (
       <div className="min-h-screen bg-slate-50">
         <Navbar email={user.email!} role="ADMIN" />
@@ -28,7 +31,13 @@ export default async function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-50">
         <Navbar email={user.email!} role="SELLER" />
-        <main className="container mx-auto p-4 max-w-lg"><SellerView products={products || []} myHolds={myHolds || []} profile={profile} allUsers={allUsers || []} /></main>
+        <main className="container mx-auto p-4 max-w-lg space-y-8">
+            <SellerView products={products || []} myHolds={myHolds || []} profile={profile} allUsers={allUsers || []} />
+            
+            <div className="pt-8 border-t border-slate-200">
+               <ActivityFeed />
+            </div>
+        </main>
       </div>
     )
   }

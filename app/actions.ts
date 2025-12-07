@@ -4,7 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-// --- AUTH & ADMIN ---
+// --- AUTH ---
 export async function login(formData: FormData) {
   const supabase = await createClient()
   const email = formData.get('email') as string
@@ -47,92 +47,114 @@ export async function restockProduct(productId: string, quantity: number) {
   if (!product) return { error: "Product not found" }
   
   await supabase.from('products').update({ current_stock: product.current_stock + quantity }).eq('id', productId)
-  await supabase.from('transactions').insert({
-    user_id: user.id, product_id: productId, type: 'restock', quantity: quantity
-  })
+  await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'restock', quantity })
   revalidatePath('/dashboard')
   return { success: true }
 }
 
-// --- SELLER ACTIONS (V2 FINANCIAL) ---
-export async function withdrawItem(productId: string) {
+// --- SELLER ACTIONS (V2.5 BULK) ---
+export async function withdrawItem(productId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
-  // 1. Data
+  // 1. Data & Checks
   const { data: product } = await supabase.from('products').select('*').eq('id', productId).single()
   const { data: profile } = await supabase.from('profiles').select('invested_amount').eq('id', user.id).single()
-  if (!product || !profile) return { error: 'Error fetching data' }
-  if (product.current_stock < 1) return { error: 'Sin stock' }
+  
+  if (!product || !profile) return { error: 'Error data' }
+  if (product.current_stock < quantity) return { error: `Solo quedan ${product.current_stock} unidades` }
 
   // 2. Credit Check
   const { data: myHolds } = await supabase.from('inventory_holds').select('quantity, products(cost_price)').eq('user_id', user.id).eq('status', 'held')
   let currentHeldValue = 0
   myHolds?.forEach((h: any) => { currentHeldValue += h.quantity * (h.products?.cost_price || 0) })
-
-  if ((currentHeldValue + product.cost_price) > profile.invested_amount) {
-    return { error: `Límite de crédito excedido. Disponible: ${profile.invested_amount - currentHeldValue}€` }
+  
+  const costOfBatch = product.cost_price * quantity
+  
+  if ((currentHeldValue + costOfBatch) > profile.invested_amount) {
+    return { error: `Límite excedido. Te faltan crédito para retirar ${quantity} uds.` }
   }
 
   // 3. Exec
-  await supabase.from('products').update({ current_stock: product.current_stock - 1 }).eq('id', productId)
+  await supabase.from('products').update({ current_stock: product.current_stock - quantity }).eq('id', productId)
   
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
   if (hold) {
-    await supabase.from('inventory_holds').update({ quantity: hold.quantity + 1 }).eq('id', hold.id)
+    await supabase.from('inventory_holds').update({ quantity: hold.quantity + quantity }).eq('id', hold.id)
   } else {
-    await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity: 1, status: 'held' })
+    await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity, status: 'held' })
   }
 
-  await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'withdraw', quantity: 1 })
+  await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'withdraw', quantity })
   revalidatePath('/dashboard')
   return { success: true }
 }
 
-export async function sellItem(productId: string, finalPrice: number) {
+export async function returnItem(productId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
-  if (!hold || hold.quantity < 1) return { error: 'No tienes stock' }
+  if (!hold || hold.quantity < quantity) return { error: 'No tienes suficiente stock para devolver' }
 
-  await supabase.from('inventory_holds').update({ quantity: hold.quantity - 1 }).eq('id', hold.id)
+  await supabase.from('inventory_holds').update({ quantity: hold.quantity - quantity }).eq('id', hold.id)
+
+  const { data: product } = await supabase.from('products').select('current_stock').eq('id', productId).single()
+  if (product) {
+      await supabase.from('products').update({ current_stock: product.current_stock + quantity }).eq('id', productId)
+  }
+
+  await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'return', quantity })
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+export async function sellItem(productId: string, finalPricePerUnit: number, quantity: number = 1) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
+  if (!hold || hold.quantity < quantity) return { error: 'No tienes suficiente stock' }
+
+  await supabase.from('inventory_holds').update({ quantity: hold.quantity - quantity }).eq('id', hold.id)
   
   const { data: sold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'sold').single()
   if (sold) {
-    await supabase.from('inventory_holds').update({ quantity: sold.quantity + 1 }).eq('id', sold.id)
+    await supabase.from('inventory_holds').update({ quantity: sold.quantity + quantity }).eq('id', sold.id)
   } else {
-    await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity: 1, status: 'sold' })
+    await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity, status: 'sold' })
   }
 
+  // Log as one transaction (or multiple? One is cleaner for feed)
   await supabase.from('transactions').insert({
-    user_id: user.id, product_id: productId, type: 'sold', quantity: 1, actual_price: finalPrice
+    user_id: user.id, product_id: productId, type: 'sold', quantity, actual_price: finalPricePerUnit * quantity
   })
   revalidatePath('/dashboard')
   return { success: true }
 }
 
-export async function transferItem(productId: string, targetUserId: string) {
+export async function transferItem(productId: string, targetUserId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
   const { data: myHold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
-  if (!myHold || myHold.quantity < 1) return { error: 'No tienes stock' }
+  if (!myHold || myHold.quantity < quantity) return { error: 'No tienes suficiente stock' }
 
-  await supabase.from('inventory_holds').update({ quantity: myHold.quantity - 1 }).eq('id', myHold.id)
+  await supabase.from('inventory_holds').update({ quantity: myHold.quantity - quantity }).eq('id', myHold.id)
   
   const { data: targetHold } = await supabase.from('inventory_holds').select('*').eq('user_id', targetUserId).eq('product_id', productId).eq('status', 'held').single()
   if (targetHold) {
-    await supabase.from('inventory_holds').update({ quantity: targetHold.quantity + 1 }).eq('id', targetHold.id)
+    await supabase.from('inventory_holds').update({ quantity: targetHold.quantity + quantity }).eq('id', targetHold.id)
   } else {
-    await supabase.from('inventory_holds').insert({ user_id: targetUserId, product_id: productId, quantity: 1, status: 'held' })
+    await supabase.from('inventory_holds').insert({ user_id: targetUserId, product_id: productId, quantity, status: 'held' })
   }
 
   await supabase.from('transactions').insert({
-    user_id: user.id, target_user_id: targetUserId, product_id: productId, type: 'transfer', quantity: 1
+    user_id: user.id, target_user_id: targetUserId, product_id: productId, type: 'transfer', quantity
   })
   revalidatePath('/dashboard')
   return { success: true }

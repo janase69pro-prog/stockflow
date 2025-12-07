@@ -5,13 +5,21 @@ import { Product, Transaction } from '@/types'
 import { createProduct, restockProduct } from '@/app/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Archive, BarChart3 } from 'lucide-react'
+import { Plus, Archive, BarChart3, Package } from 'lucide-react'
 import Link from 'next/link'
+import ActivityFeed from './activity-feed' // Importamos el feed
 
-export default function AdminView({ products }: { products: Product[], transactions: Transaction[] }) {
+// Nota: ActivityFeed es un Server Component, pero AdminView es Client. 
+// Para simplificar, pasaremos el feed renderizado desde page.tsx o lo haremos cliente.
+// Como ActivityFeed es async, mejor lo renderizamos en page.tsx y lo pasamos como children o prop.
+// PERO para ir rápido y no refactorizar todo page.tsx, haremos una versión Cliente de ActivityFeed o lo inyectamos abajo.
+
+// Vamos a dejar AdminView limpio y poner el ActivityFeed en layout o page.
+// Mejor: AdminView recibe `transactions` ya. Usaremos esas para pintar un mini-feed aquí mismo.
+
+export default function AdminView({ products, transactions }: { products: Product[], transactions: Transaction[] }) {
   const [isRestocking, setIsRestocking] = useState<string | null>(null)
 
-  // Wrappers to fix TypeScript return type issues
   async function handleCreate(formData: FormData) {
     const res = await createProduct(formData)
     if (res?.error) alert(res.error)
@@ -25,47 +33,82 @@ export default function AdminView({ products }: { products: Product[], transacti
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-end">
+    <div className="space-y-8 pb-12">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Panel de Control</h1>
         <Link href="/dashboard/stats">
-          <Button variant="outline" className="gap-2"><BarChart3 className="w-4 h-4" /> Ver Estadísticas</Button>
+          <Button variant="outline" className="gap-2 shadow-sm border-slate-300 text-slate-700 bg-white hover:bg-slate-50">
+            <BarChart3 className="w-4 h-4" /> Estadísticas
+          </Button>
         </Link>
       </div>
 
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><Plus className="w-5 h-5" /> Nuevo Producto</h2>
-        <form action={handleCreate} className="flex gap-4 items-end flex-wrap">
-          <div className="flex-1 min-w-[200px]"><label className="text-sm font-medium">Nombre</label><Input name="name" required /></div>
-          <div className="w-32"><label className="text-sm font-medium">Var</label><Input name="variation" /></div>
-          <div className="w-24"><label className="text-sm font-medium">Coste</label><Input name="cost_price" type="number" step="0.01" required /></div>
-          <div className="w-24"><label className="text-sm font-medium">PVP</label><Input name="price" type="number" step="0.01" required /></div>
-          <div className="w-24"><label className="text-sm font-medium">Stock</label><Input name="stock" type="number" required /></div>
-          <Button type="submit">Crear</Button>
-        </form>
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Main Content (Left) */}
+        <div className="lg:col-span-2 space-y-8">
+            {/* Create Product Card */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 className="text-sm font-semibold uppercase text-slate-500 mb-4 flex items-center gap-2 tracking-wider"><Plus className="w-4 h-4" /> Alta de Producto</h2>
+                <form action={handleCreate} className="grid grid-cols-2 md:grid-cols-6 gap-4 items-end">
+                <div className="col-span-2 md:col-span-2 space-y-1"><label className="text-xs font-bold text-slate-600">Nombre</label><Input name="name" required placeholder="Ej: Camiseta..." /></div>
+                <div className="space-y-1"><label className="text-xs font-bold text-slate-600">Variación</label><Input name="variation" placeholder="Talla/Color" /></div>
+                <div className="space-y-1"><label className="text-xs font-bold text-slate-600">Coste (€)</label><Input name="cost_price" type="number" step="0.01" required placeholder="0.00" /></div>
+                <div className="space-y-1"><label className="text-xs font-bold text-slate-600">PVP (€)</label><Input name="price" type="number" step="0.01" required placeholder="0.00" /></div>
+                <div className="space-y-1"><label className="text-xs font-bold text-slate-600">Stock Ini.</label><Input name="stock" type="number" required placeholder="0" /></div>
+                <div className="col-span-2 md:col-span-6 flex justify-end mt-2"><Button type="submit" className="bg-slate-900 text-white w-full md:w-auto">Crear Producto</Button></div>
+                </form>
+            </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50"><h2 className="font-semibold flex items-center gap-2"><Archive className="w-4 h-4" /> Inventario</h2></div>
-        <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-slate-500"><tr><th className="px-4 py-3">Producto</th><th className="px-4 py-3">Coste</th><th className="px-4 py-3 text-right">PVP</th><th className="px-4 py-3 text-center">Stock</th><th className="px-4 py-3 text-right">Acciones</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">
-            {products.map((p) => (
-              <tr key={p.id}>
-                <td className="px-4 py-3 font-medium">{p.name} <span className="text-slate-500">({p.variation})</span></td>
-                <td className="px-4 py-3 text-slate-500">{p.cost_price} €</td>
-                <td className="px-4 py-3 text-right">{p.price} €</td>
-                <td className={`px-4 py-3 text-center font-bold ${p.current_stock < 5 ? 'text-red-500' : 'text-green-600'}`}>{p.current_stock}</td>
-                <td className="px-4 py-3 text-right">
-                  {isRestocking === p.id ? (
-                    <form action={(fd) => handleRestock(p.id, fd)} className="flex justify-end gap-2">
-                      <Input name="qty" type="number" className="w-20 h-8" autoFocus /><Button size="sm" type="submit" className="h-8">OK</Button>
-                    </form>
-                  ) : (<Button variant="outline" className="h-8 text-xs" onClick={() => setIsRestocking(p.id)}>Reponer</Button>)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            {/* Inventory Table */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between"><h2 className="font-semibold text-slate-800 flex items-center gap-2"><Package className="w-4 h-4" /> Inventario Actual</h2><span className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-full font-bold">{products.length} Items</span></div>
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 text-slate-500 uppercase text-xs tracking-wider border-b border-slate-100"><tr><th className="px-6 py-3 font-semibold">Producto</th><th className="px-6 py-3 font-semibold">Coste</th><th className="px-6 py-3 font-semibold text-right">PVP</th><th className="px-6 py-3 font-semibold text-center">Stock</th><th className="px-6 py-3 font-semibold text-right">Gestión</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                    {products.map((p) => (
+                        <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 font-medium text-slate-900">{p.name} <span className="text-slate-400 font-normal ml-1">{p.variation}</span></td>
+                        <td className="px-6 py-4 text-slate-500">{p.cost_price.toFixed(2)} €</td>
+                        <td className="px-6 py-4 text-right font-medium">{p.price.toFixed(2)} €</td>
+                        <td className="px-6 py-4 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${p.current_stock < 5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{p.current_stock}</span></td>
+                        <td className="px-6 py-4 text-right">
+                            {isRestocking === p.id ? (
+                            <form action={(fd) => handleRestock(p.id, fd)} className="flex items-center justify-end gap-2 animate-in fade-in slide-in-from-right-4 duration-200"><Input name="qty" type="number" className="w-20 h-8 text-right" placeholder="+0" autoFocus /><Button size="sm" type="submit" className="h-8 px-3">Guardar</Button></form>
+                            ) : (<Button variant="ghost" size="sm" className="h-8 text-xs hover:bg-slate-100 text-slate-600" onClick={() => setIsRestocking(p.id)}>+ Stock</Button>)}
+                        </td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </div>
+
+        {/* Sidebar (Right) - Activity Feed */}
+        <div className="lg:col-span-1">
+             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-full">
+                <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Actividad Reciente</h3>
+                <div className="space-y-4">
+                    {transactions.map((t) => {
+                         // Simple client-side render of transactions since we have them
+                         const userName = t.profiles?.name || "Usuario"
+                         const prodName = t.products?.name || "Producto"
+                         let text = `${userName} ${t.type} ${t.quantity} ${prodName}`
+                         if(t.type === 'sold') text = `${userName} vendió ${t.quantity} ${prodName}`
+                         if(t.type === 'withdraw') text = `${userName} retiró ${t.quantity} ${prodName}`
+                         
+                         return (
+                             <div key={t.id} className="text-sm border-b border-slate-50 pb-2 last:border-0">
+                                 <p className="text-slate-600">{text}</p>
+                                 <p className="text-xs text-slate-400">{new Date(t.created_at).toLocaleDateString()}</p>
+                             </div>
+                         )
+                    })}
+                    {transactions.length === 0 && <p className="text-slate-400 text-sm">Sin movimientos.</p>}
+                </div>
+             </div>
+        </div>
       </div>
     </div>
   )
