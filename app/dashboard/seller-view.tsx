@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Send, Wallet, Tag, PackageCheck, RotateCcw, Minus, Plus, Banknote } from 'lucide-react'
 
-export default function SellerView({ products, myHolds, profile, allUsers }: { products: Product[], myHolds: InventoryHold[], profile: Profile, allUsers: { id: string, name: string }[] }) {
+export default function SellerView({ products, myHolds, profile, allUsers }: { products: Product[], myHolds: InventoryHold[], profile: Profile, allUsers: { id: string, name: string, email: string }[] }) {
   const [sellingItem, setSellingItem] = useState<{id: string, name: string, price: number} | null>(null)
   const [transferringItem, setTransferringItem] = useState<{id: string, name: string} | null>(null)
   const [quantities, setQuantities] = useState<Record<string, number>>({})
