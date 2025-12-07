@@ -11,6 +11,19 @@ import Link from 'next/link'
 export default function AdminView({ products }: { products: Product[], transactions: Transaction[] }) {
   const [isRestocking, setIsRestocking] = useState<string | null>(null)
 
+  // Wrappers to fix TypeScript return type issues
+  async function handleCreate(formData: FormData) {
+    const res = await createProduct(formData)
+    if (res?.error) alert(res.error)
+  }
+
+  async function handleRestock(productId: string, formData: FormData) {
+    const qty = parseInt(formData.get('qty') as string)
+    const res = await restockProduct(productId, qty)
+    if (res?.error) alert(res.error)
+    setIsRestocking(null)
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex justify-end">
@@ -21,7 +34,7 @@ export default function AdminView({ products }: { products: Product[], transacti
 
       <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><Plus className="w-5 h-5" /> Nuevo Producto</h2>
-        <form action={createProduct} className="flex gap-4 items-end flex-wrap">
+        <form action={handleCreate} className="flex gap-4 items-end flex-wrap">
           <div className="flex-1 min-w-[200px]"><label className="text-sm font-medium">Nombre</label><Input name="name" required /></div>
           <div className="w-32"><label className="text-sm font-medium">Var</label><Input name="variation" /></div>
           <div className="w-24"><label className="text-sm font-medium">Coste</label><Input name="cost_price" type="number" step="0.01" required /></div>
@@ -44,7 +57,7 @@ export default function AdminView({ products }: { products: Product[], transacti
                 <td className={`px-4 py-3 text-center font-bold ${p.current_stock < 5 ? 'text-red-500' : 'text-green-600'}`}>{p.current_stock}</td>
                 <td className="px-4 py-3 text-right">
                   {isRestocking === p.id ? (
-                    <form action={async (formData) => { await restockProduct(p.id, parseInt(formData.get('qty') as string)); setIsRestocking(null) }} className="flex justify-end gap-2">
+                    <form action={(fd) => handleRestock(p.id, fd)} className="flex justify-end gap-2">
                       <Input name="qty" type="number" className="w-20 h-8" autoFocus /><Button size="sm" type="submit" className="h-8">OK</Button>
                     </form>
                   ) : (<Button variant="outline" className="h-8 text-xs" onClick={() => setIsRestocking(p.id)}>Reponer</Button>)}
