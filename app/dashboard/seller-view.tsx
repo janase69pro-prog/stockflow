@@ -157,7 +157,7 @@ export default function SellerView({ products, myHolds, profile, allUsers }: { p
             <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4">
                 <h3 className="font-bold text-center">Transferir {getQty(transferringItem.id)}x {transferringItem.name}</h3>
                 <form action={handleTransfer}>
-                    <select name="targetId" className="w-full p-3 border rounded mb-4" required><option value="">Elegir compañero...</option>{allUsers.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}</select>
+                    <select name="targetId" className="w-full p-3 border rounded mb-4" required><option value="">Elegir compañero...</option>{allUsers.map(u => <option key={u.id} value={u.id}>{u.name || u.email.split('@')[0]}</option>)}</select>
                     <div className="grid grid-cols-2 gap-2"><Button type="button" variant="outline" onClick={() => setTransferringItem(null)}>Cancelar</Button><Button type="submit" className="bg-blue-600 text-white">Enviar</Button></div>
                 </form>
             </div>

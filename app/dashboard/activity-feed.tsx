@@ -4,9 +4,10 @@ import { ArrowRightLeft, ShoppingCart, PackagePlus, RotateCcw, PackageMinus } fr
 export default async function ActivityFeed() {
   const supabase = await createClient()
   
+  // Update query to fetch email too
   const { data: transactions } = await supabase
     .from('transactions')
-    .select('*, products(name), profiles(name)')
+    .select('*, products(name), profiles(name, email)')
     .order('created_at', { ascending: false })
     .limit(10)
 
@@ -16,11 +17,16 @@ export default async function ActivityFeed() {
     <div className="space-y-4">
       <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wider mb-2">Actividad Reciente</h3>
       <div className="space-y-3">
-        {transactions.map((t) => {
+        {transactions.map((t: any) => {
           let icon = <ArrowRightLeft className="w-4 h-4 text-slate-400" />
           let color = "bg-slate-100"
           let text = ""
-          const userName = t.profiles?.name || "Alguien"
+          
+          // Fallback Logic: Name -> Email User -> "Alguien"
+          const rawName = t.profiles?.name
+          const emailUser = t.profiles?.email?.split('@')[0]
+          const userName = rawName || emailUser || "Alguien"
+          
           const prodName = t.products?.name || "Producto"
 
           switch(t.type) {

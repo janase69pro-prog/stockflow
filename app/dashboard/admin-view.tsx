@@ -174,7 +174,7 @@ export default function AdminView({ products, transactions, allUsers }: { produc
                             <h3 className="font-bold text-sm mb-2">Aportaciones (€)</h3>
                             {allUsers.map(u => (
                                 <div key={u.id} className="flex justify-between items-center mb-2">
-                                    <span className="text-sm">{u.name}</span>
+                                    <span className="text-sm">{u.name || u.email.split('@')[0]}</span>
                                     <Input name={`amount_${u.id}`} type="number" className="w-24 h-8 text-right" placeholder="0" />
                                 </div>
                             ))}

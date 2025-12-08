@@ -24,13 +24,18 @@ export async function signOut() {
   redirect('/')
 }
 
-export async function updatePassword(newPassword: string) {
+export async function updatePassword(newPassword: string, name: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
   const { error } = await supabase.auth.updateUser({ password: newPassword })
   if (error) return { error: error.message }
-  await supabase.from('profiles').update({ must_change_password: false }).eq('id', user.id)
+  
+  await supabase.from('profiles').update({ 
+    must_change_password: false,
+    name: name 
+  }).eq('id', user.id)
+  
   revalidatePath('/', 'layout')
   redirect('/dashboard')
 }

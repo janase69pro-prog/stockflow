@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { updatePassword } from '@/app/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { LockKeyhole, AlertCircle } from 'lucide-react'
+import { LockKeyhole, AlertCircle, User } from 'lucide-react'
 
 export default function ChangePasswordPage() {
   const [error, setError] = useState<string | null>(null)
@@ -15,8 +15,15 @@ export default function ChangePasswordPage() {
     setLoading(true)
     setError(null)
     const formData = new FormData(event.currentTarget)
+    const name = formData.get('name') as string
     const p1 = formData.get('p1') as string
     const p2 = formData.get('p2') as string
+
+    if (!name || name.trim().length < 2) {
+      setError("Por favor, introduce tu nombre real")
+      setLoading(false)
+      return
+    }
 
     if (p1.length < 6) {
       setError("La contraseña debe tener al menos 6 caracteres")
@@ -30,7 +37,7 @@ export default function ChangePasswordPage() {
       return
     }
 
-    const res = await updatePassword(p1)
+    const res = await updatePassword(p1, name)
     if (res?.error) {
       setError(res.error)
       setLoading(false)
@@ -44,11 +51,19 @@ export default function ChangePasswordPage() {
           <div className="h-12 w-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center mb-2">
             <LockKeyhole className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Seguridad Requerida</h1>
-          <p className="text-slate-500 text-sm">Es tu primer inicio de sesión. Por favor, crea una nueva contraseña personal.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Configura tu Cuenta</h1>
+          <p className="text-slate-500 text-sm">Es tu primer acceso. Dinos cómo te llamas y cambia tu contraseña.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none text-slate-700">Nombre (Visible para el grupo)</label>
+            <div className="relative">
+                <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Input name="name" type="text" placeholder="Ej: Unai" required className="pl-9" />
+            </div>
+          </div>
+          
           <div className="space-y-2">
             <label className="text-sm font-medium leading-none text-slate-700">Nueva Contraseña</label>
             <Input name="p1" type="password" required />
@@ -57,9 +72,11 @@ export default function ChangePasswordPage() {
             <label className="text-sm font-medium leading-none text-slate-700">Confirmar Contraseña</label>
             <Input name="p2" type="password" required />
           </div>
+          
           {error && <div className="text-sm text-red-600 flex items-center gap-2 bg-red-50 p-2 rounded"><AlertCircle className="w-4 h-4"/> {error}</div>}
+          
           <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white" type="submit" disabled={loading}>
-            {loading ? 'Actualizando...' : 'Establecer Contraseña'}
+            {loading ? 'Guardando...' : 'Guardar y Entrar'}
           </Button>
         </form>
       </div>
