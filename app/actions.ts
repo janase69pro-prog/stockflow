@@ -179,8 +179,16 @@ export async function withdrawItem(productId: string, quantity: number = 1) {
   if ((currentHeldValue + (product.cost_price * quantity)) > profile.invested_amount) return { error: 'Límite de crédito excedido' }
 
   // 2. USE RPC TO DECREMENT GLOBAL STOCK (Bypasses RLS for sellers)
+  // This handles concurrency: Database will lock the row or fail the constraint/check
   const { error: rpcError } = await supabase.rpc('withdraw_stock_secure', { p_id: productId, qty: quantity })
-  if (rpcError) return { error: 'Error actualizando stock: ' + rpcError.message }
+  
+  if (rpcError) {
+    // Translate DB error to User Friendly error
+    if (rpcError.message.includes('No hay suficiente stock') || rpcError.message.includes('products_stock_non_negative')) {
+        return { error: '¡Vaya! Alguien acaba de llevarse el último. Refresca la página.' }
+    }
+    return { error: 'Error de stock: ' + rpcError.message }
+  }
 
   // 3. Update User Hand
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
