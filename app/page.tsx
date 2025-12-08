@@ -34,12 +34,12 @@ export default function LoginPage() {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium leading-none text-slate-700">Usuario</label>
-            <Input name="username" type="text" placeholder="Ej: unai" required autoCapitalize="none" autoCorrect="off" />
+            <label className="text-sm font-medium leading-none text-slate-700" htmlFor="username">Usuario</label>
+            <Input id="username" name="username" type="text" placeholder="Ej: unai" required autoCapitalize="none" autoCorrect="off" />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium leading-none text-slate-700">Contraseña</label>
-            <Input name="password" type="password" required />
+            <label className="text-sm font-medium leading-none text-slate-700" htmlFor="password">Contraseña</label>
+            <Input id="password" name="password" type="password" required />
           </div>
           {error && <div className="text-sm text-red-600 flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {error}</div>}
           <Button className="w-full" type="submit" disabled={loading}>{loading ? 'Iniciando...' : 'Entrar'}</Button>

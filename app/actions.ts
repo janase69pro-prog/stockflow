@@ -86,11 +86,8 @@ export async function addVariantToFamily(familyId: string, variationName: string
   return { success: true }
 }
 
-// --- LEGACY PRODUCT FUNCTIONS (Exported for compatibility if needed, but updated) ---
-export async function createProduct(formData: FormData) {
-    // Wrapper to redirect to family creation logic or fail gracefully
-    return createProductFamily(formData) 
-}
+// --- LEGACY WRAPPERS ---
+export async function createProduct(formData: FormData) { return createProductFamily(formData) }
 
 export async function updateProduct(productId: string, data: { name: string, variation: string, cost_price: number, price: number }) {
   const supabase = await createClient()
@@ -108,7 +105,7 @@ export async function deleteProduct(productId: string) {
   return { success: true }
 }
 
-// --- BATCHES & STOCK ---
+// --- BATCHES ---
 export async function registerBatchContribution(
   batchName: string, 
   contributions: { userId: string, amount: number }[],
@@ -118,7 +115,6 @@ export async function registerBatchContribution(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
-  // 1. Money
   for (const contrib of contributions) {
     if (contrib.amount > 0) {
       await supabase.from('capital_entries').insert({ batch_name: batchName, user_id: contrib.userId, amount: contrib.amount })
@@ -127,7 +123,6 @@ export async function registerBatchContribution(
     }
   }
 
-  // 2. Stock
   for (const stock of stockChanges) {
     if (stock.quantity > 0) {
       const { data: product } = await supabase.from('products').select('current_stock').eq('id', stock.productId).single()
@@ -155,15 +150,16 @@ export async function restockProduct(productId: string, quantity: number) {
     return { success: true }
   }
 
-// --- SELLER ACTIONS ---
+// --- SELLER ACTIONS (FIXED) ---
 export async function withdrawItem(productId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
+  // 1. Data Checks
   const { data: product } = await supabase.from('products').select('*').eq('id', productId).single()
   const { data: profile } = await supabase.from('profiles').select('invested_amount').eq('id', user.id).single()
-  if (!product || !profile) return { error: 'Error' }
+  if (!product || !profile) return { error: 'Error data' }
   if (product.current_stock < quantity) return { error: 'Stock insuficiente' }
 
   const { data: myHolds } = await supabase.from('inventory_holds').select('quantity, products(cost_price)').eq('user_id', user.id).eq('status', 'held')
@@ -172,32 +168,17 @@ export async function withdrawItem(productId: string, quantity: number = 1) {
   
   if ((currentHeldValue + (product.cost_price * quantity)) > profile.invested_amount) return { error: 'Límite de crédito excedido' }
 
-  await supabase.from('products').update({ current_stock: product.current_stock - quantity }).eq('id', productId)
+  // 2. USE RPC TO DECREMENT GLOBAL STOCK (Bypasses RLS for sellers)
+  const { error: rpcError } = await supabase.rpc('withdraw_stock_secure', { p_id: productId, qty: quantity })
+  if (rpcError) return { error: 'Error actualizando stock: ' + rpcError.message }
+
+  // 3. Update User Hand
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
   
   if (hold) await supabase.from('inventory_holds').update({ quantity: hold.quantity + quantity }).eq('id', hold.id)
   else await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity, status: 'held' })
 
   await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'withdraw', quantity })
-  revalidatePath('/dashboard')
-  return { success: true }
-}
-
-export async function sellItem(productId: string, finalPrice: number, quantity: number = 1) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Unauthorized' }
-  
-  const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
-  if (!hold || hold.quantity < quantity) return { error: 'No tienes stock' }
-
-  await supabase.from('inventory_holds').update({ quantity: hold.quantity - quantity }).eq('id', hold.id)
-  
-  const { data: sold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'sold').single()
-  if (sold) await supabase.from('inventory_holds').update({ quantity: sold.quantity + quantity }).eq('id', sold.id)
-  else await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity, status: 'sold' })
-
-  await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'sold', quantity, actual_price: finalPrice * quantity })
   revalidatePath('/dashboard')
   return { success: true }
 }
@@ -210,11 +191,34 @@ export async function returnItem(productId: string, quantity: number = 1) {
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
   if (!hold || hold.quantity < quantity) return { error: 'No tienes stock para devolver' }
 
+  // 1. Decrement Hand
   await supabase.from('inventory_holds').update({ quantity: hold.quantity - quantity }).eq('id', hold.id)
-  const { data: product } = await supabase.from('products').select('current_stock').eq('id', productId).single()
-  if (product) await supabase.from('products').update({ current_stock: product.current_stock + quantity }).eq('id', productId)
+  
+  // 2. Increment Global Stock (RPC)
+  const { error: rpcError } = await supabase.rpc('return_stock_secure', { p_id: productId, qty: quantity })
+  if (rpcError) return { error: rpcError.message }
 
   await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'return', quantity })
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+export async function sellItem(productId: string, finalPrice: number, quantity: number = 1) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+  
+  const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
+  if (!hold || hold.quantity < quantity) return { error: 'No tienes stock' }
+
+  // Move from Held to Sold
+  await supabase.from('inventory_holds').update({ quantity: hold.quantity - quantity }).eq('id', hold.id)
+  
+  const { data: sold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'sold').single()
+  if (sold) await supabase.from('inventory_holds').update({ quantity: sold.quantity + quantity }).eq('id', sold.id)
+  else await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity, status: 'sold' })
+
+  await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'sold', quantity, actual_price: finalPrice * quantity })
   revalidatePath('/dashboard')
   return { success: true }
 }
