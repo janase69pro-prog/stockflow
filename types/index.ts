@@ -10,15 +10,25 @@ export interface Profile {
   created_at: string;
 }
 
-export interface Product {
+export interface ProductFamily {
   id: string;
   name: string;
-  variation: string | null;
-  current_stock: number;
+  description: string | null;
   price: number;
   cost_price: number;
-  image_url: string | null;
+  products?: Product[]; // Relación con hijos
+}
+
+export interface Product {
+  id: string;
+  family_id: string;
+  name: string; // Se mantiene por compatibilidad, pero es redundante con Family
+  variation: string | null;
+  current_stock: number;
+  price: number; // Heredado o específico
+  cost_price: number; // Heredado o específico
   created_at: string;
+  product_families?: ProductFamily; // Relación con padre
 }
 
 export interface InventoryHold {
