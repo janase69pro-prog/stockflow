@@ -124,7 +124,12 @@ export async function registerBatchContribution(
     if (contrib.amount > 0) {
       await supabase.from('capital_entries').insert({ batch_name: batchName, user_id: contrib.userId, amount: contrib.amount })
       const { data: current } = await supabase.from('profiles').select('invested_amount').eq('id', contrib.userId).single()
-      if (current) await supabase.from('profiles').update({ invested_amount: current.invested_amount + contrib.amount }).eq('id', contrib.userId)
+      if (current) {
+        const currentAmount = current.invested_amount || 0
+        await supabase.from('profiles').update({ 
+          invested_amount: currentAmount + contrib.amount 
+        }).eq('id', contrib.userId)
+      }
     }
   }
 
