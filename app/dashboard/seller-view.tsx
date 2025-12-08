@@ -21,9 +21,13 @@ export default function SellerView({ products, myHolds, profile, allUsers }: { p
 
   const heldItems = myHolds.filter(h => h.status === 'held')
   const soldItems = myHolds.filter(h => h.status === 'sold')
+  
+  // Robustez: Evitar NaN si invested_amount es null/undefined
+  const investedAmount = profile.invested_amount || 0
+  
   const totalHeldValue = heldItems.reduce((acc, h) => acc + (h.quantity * (h.products?.cost_price || 0)), 0)
-  const creditAvailable = profile.invested_amount - totalHeldValue
-  const creditPercent = profile.invested_amount > 0 ? (totalHeldValue / profile.invested_amount) * 100 : 0
+  const creditAvailable = investedAmount - totalHeldValue
+  const creditPercent = investedAmount > 0 ? (totalHeldValue / investedAmount) * 100 : 0
   const getMyQty = (pid: string) => heldItems.find(h => h.product_id === pid)?.quantity || 0
   const getQty = (pid: string) => quantities[pid] || 1
   const incQty = (pid: string) => setQuantities(prev => ({ ...prev, [pid]: (prev[pid] || 1) + 1 }))
