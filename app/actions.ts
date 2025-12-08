@@ -38,8 +38,6 @@ export async function updatePassword(newPassword: string) {
 // --- PRODUCT FAMILIES (NEW V5) ---
 export async function createProductFamily(formData: FormData) {
   const supabase = await createClient()
-  
-  // 1. Create Family
   const name = formData.get('name') as string
   const price = parseFloat(formData.get('price') as string)
   const cost_price = parseFloat(formData.get('cost_price') as string)
@@ -50,9 +48,7 @@ export async function createProductFamily(formData: FormData) {
   
   if (famError || !family) return { error: famError?.message || "Error creating family" }
 
-  // 2. Create Initial Variants
-  // Parse variants from form (e.g. "Chocolate, Vainilla") or single
-  const variationsRaw = formData.get('variations') as string // "Sabor 1, Sabor 2"
+  const variationsRaw = formData.get('variations') as string
   const initialStock = parseInt(formData.get('stock') as string) || 0
   
   const variants = variationsRaw.split(',').map(s => s.trim()).filter(s => s !== '')
@@ -61,10 +57,10 @@ export async function createProductFamily(formData: FormData) {
   for (const v of variants) {
     await supabase.from('products').insert({
       family_id: family.id,
-      name: name, // Redundant legacy
+      name: name,
       variation: v,
-      price: price, // Copy for legacy
-      cost_price: cost_price, // Copy for legacy
+      price: price,
+      cost_price: cost_price,
       current_stock: initialStock
     })
   }
@@ -86,6 +82,28 @@ export async function addVariantToFamily(familyId: string, variationName: string
     cost_price: fam.cost_price,
     current_stock: stock
   })
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+// --- LEGACY PRODUCT FUNCTIONS (Exported for compatibility if needed, but updated) ---
+export async function createProduct(formData: FormData) {
+    // Wrapper to redirect to family creation logic or fail gracefully
+    return createProductFamily(formData) 
+}
+
+export async function updateProduct(productId: string, data: { name: string, variation: string, cost_price: number, price: number }) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('products').update(data).eq('id', productId)
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+export async function deleteProduct(productId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('products').delete().eq('id', productId)
+  if (error) return { error: "Error al borrar" }
   revalidatePath('/dashboard')
   return { success: true }
 }
@@ -123,7 +141,21 @@ export async function registerBatchContribution(
   return { success: true }
 }
 
-// --- SELLER ACTIONS (UNCHANGED LOGIC, JUST TYPES) ---
+export async function restockProduct(productId: string, quantity: number) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+  
+    const { data: product } = await supabase.from('products').select('current_stock').eq('id', productId).single()
+    if (!product) return { error: "Product not found" }
+    
+    await supabase.from('products').update({ current_stock: product.current_stock + quantity }).eq('id', productId)
+    await supabase.from('transactions').insert({ user_id: user.id, product_id: productId, type: 'restock', quantity })
+    revalidatePath('/dashboard')
+    return { success: true }
+  }
+
+// --- SELLER ACTIONS ---
 export async function withdrawItem(productId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -154,6 +186,7 @@ export async function withdrawItem(productId: string, quantity: number = 1) {
 export async function sellItem(productId: string, finalPrice: number, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
   
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
   if (!hold || hold.quantity < quantity) return { error: 'No tienes stock' }
@@ -172,6 +205,7 @@ export async function sellItem(productId: string, finalPrice: number, quantity: 
 export async function returnItem(productId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
   
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
   if (!hold || hold.quantity < quantity) return { error: 'No tienes stock para devolver' }
@@ -188,6 +222,7 @@ export async function returnItem(productId: string, quantity: number = 1) {
 export async function transferItem(productId: string, targetUserId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
   
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
   if (!hold || hold.quantity < quantity) return { error: 'No tienes stock' }
