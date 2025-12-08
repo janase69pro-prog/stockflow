@@ -179,3 +179,38 @@ export async function transferItem(productId: string, targetUserId: string, quan
   revalidatePath('/dashboard')
   return { success: true }
 }
+
+// --- CAPITAL MANAGEMENT (BATCHES) ---
+export async function registerBatchContribution(batchName: string, contributions: { userId: string, amount: number }[]) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  // Verify Admin
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') return { error: 'Unauthorized' }
+
+  for (const contrib of contributions) {
+    if (contrib.amount > 0) {
+      // 1. Log entry
+      const { error: logError } = await supabase.from('capital_entries').insert({
+        batch_name: batchName,
+        user_id: contrib.userId,
+        amount: contrib.amount
+      })
+      if (logError) console.error('Error logging capital:', logError)
+
+      // 2. Update User Balance (Invested Amount) - Increment
+      // Fetch current to add safely (or use RPC if strict concurrency needed, but loop is fine here)
+      const { data: current } = await supabase.from('profiles').select('invested_amount').eq('id', contrib.userId).single()
+      if (current) {
+        await supabase.from('profiles').update({ 
+          invested_amount: current.invested_amount + contrib.amount 
+        }).eq('id', contrib.userId)
+      }
+    }
+  }
+
+  revalidatePath('/dashboard')
+  return { success: true }
+}

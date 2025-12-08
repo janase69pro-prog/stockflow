@@ -2,23 +2,15 @@
 
 import { useState } from 'react'
 import { Product, Transaction } from '@/types'
-import { createProduct, restockProduct } from '@/app/actions'
+import { createProduct, restockProduct, registerBatchContribution } from '@/app/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Archive, BarChart3, Package } from 'lucide-react'
+import { Plus, Archive, BarChart3, Package, Wallet } from 'lucide-react'
 import Link from 'next/link'
-import ActivityFeed from './activity-feed' // Importamos el feed
 
-// Nota: ActivityFeed es un Server Component, pero AdminView es Client. 
-// Para simplificar, pasaremos el feed renderizado desde page.tsx o lo haremos cliente.
-// Como ActivityFeed es async, mejor lo renderizamos en page.tsx y lo pasamos como children o prop.
-// PERO para ir rápido y no refactorizar todo page.tsx, haremos una versión Cliente de ActivityFeed o lo inyectamos abajo.
-
-// Vamos a dejar AdminView limpio y poner el ActivityFeed en layout o page.
-// Mejor: AdminView recibe `transactions` ya. Usaremos esas para pintar un mini-feed aquí mismo.
-
-export default function AdminView({ products, transactions }: { products: Product[], transactions: Transaction[] }) {
+export default function AdminView({ products, transactions, allUsers }: { products: Product[], transactions: Transaction[], allUsers: { id: string, name: string, email: string }[] }) {
   const [isRestocking, setIsRestocking] = useState<string | null>(null)
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
 
   async function handleCreate(formData: FormData) {
     const res = await createProduct(formData)
@@ -32,19 +24,43 @@ export default function AdminView({ products, transactions }: { products: Produc
     setIsRestocking(null)
   }
 
+  async function handleBatchSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    const batchName = formData.get('batchName') as string
+    
+    const contributions = allUsers.map(u => ({
+      userId: u.id,
+      amount: parseFloat(formData.get(`amount_${u.id}`) as string) || 0
+    })).filter(c => c.amount > 0)
+
+    if (contributions.length === 0) return alert("Introduce al menos una cantidad")
+
+    const res = await registerBatchContribution(batchName, contributions)
+    if (res?.error) alert(res.error)
+    else {
+      alert("Lote registrado y saldos actualizados")
+      setIsBatchModalOpen(false)
+    }
+  }
+
   return (
     <div className="space-y-8 pb-12">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Panel de Control</h1>
-        <Link href="/dashboard/stats">
-          <Button variant="outline" className="gap-2 shadow-sm border-slate-300 text-slate-700 bg-white hover:bg-slate-50">
-            <BarChart3 className="w-4 h-4" /> Estadísticas
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+            <Button onClick={() => setIsBatchModalOpen(true)} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+                <Wallet className="w-4 h-4" /> Registrar Lote / Capital
+            </Button>
+            <Link href="/dashboard/stats">
+            <Button variant="outline" className="gap-2 shadow-sm border-slate-300 text-slate-700 bg-white hover:bg-slate-50">
+                <BarChart3 className="w-4 h-4" /> Estadísticas
+            </Button>
+            </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content (Left) */}
         <div className="lg:col-span-2 space-y-8">
             {/* Create Product Card */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -85,18 +101,20 @@ export default function AdminView({ products, transactions }: { products: Produc
             </div>
         </div>
 
-        {/* Sidebar (Right) - Activity Feed */}
+        {/* Sidebar (Right) */}
         <div className="lg:col-span-1">
              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-full">
                 <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Actividad Reciente</h3>
                 <div className="space-y-4">
                     {transactions.map((t) => {
-                         // Simple client-side render of transactions since we have them
                          const userName = t.profiles?.name || "Usuario"
                          const prodName = t.products?.name || "Producto"
                          let text = `${userName} ${t.type} ${t.quantity} ${prodName}`
                          if(t.type === 'sold') text = `${userName} vendió ${t.quantity} ${prodName}`
                          if(t.type === 'withdraw') text = `${userName} retiró ${t.quantity} ${prodName}`
+                         if(t.type === 'return') text = `${userName} devolvió ${t.quantity} ${prodName}`
+                         if(t.type === 'transfer') text = `${userName} transfirió ${t.quantity} ${prodName}`
+                         if(t.type === 'restock') text = `Admin repuso ${t.quantity} ${prodName}`
                          
                          return (
                              <div key={t.id} className="text-sm border-b border-slate-50 pb-2 last:border-0">
@@ -110,6 +128,36 @@ export default function AdminView({ products, transactions }: { products: Produc
              </div>
         </div>
       </div>
+
+      {/* BATCH MODAL */}
+      {isBatchModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                <h2 className="text-xl font-bold mb-4">Registrar Aportación / Lote</h2>
+                <form onSubmit={handleBatchSubmit} className="space-y-4">
+                    <div>
+                        <label className="text-sm font-bold text-slate-700">Nombre del Lote / Concepto</label>
+                        <Input name="batchName" placeholder="Ej: Compra Sudaderas Noviembre" required />
+                    </div>
+                    <div className="max-h-60 overflow-y-auto space-y-3 border p-3 rounded bg-slate-50">
+                        {allUsers.map(u => (
+                            <div key={u.id} className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-slate-700">{u.name || u.email}</span>
+                                <div className="flex items-center gap-2">
+                                    <Input name={`amount_${u.id}`} type="number" step="0.01" placeholder="0€" className="w-24 text-right bg-white" />
+                                    <span className="text-slate-400">€</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2">
+                        <Button type="button" variant="ghost" onClick={() => setIsBatchModalOpen(false)}>Cancelar</Button>
+                        <Button type="submit" className="bg-blue-600 text-white">Registrar Aportaciones</Button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
     </div>
   )
 }

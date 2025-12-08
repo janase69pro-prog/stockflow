@@ -23,7 +23,7 @@ export default async function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-50">
         <Navbar email={user.email!} role="ADMIN" />
-        <main className="container mx-auto p-4 md:p-8"><AdminView products={products || []} transactions={transactions || []} /></main>
+        <main className="container mx-auto p-4 md:p-8"><AdminView products={products || []} transactions={transactions || []} allUsers={allUsers || []} /></main>
       </div>
     )
   } else {
