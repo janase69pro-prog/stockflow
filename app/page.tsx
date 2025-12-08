@@ -30,19 +30,19 @@ export default function LoginPage() {
             <PackageOpen className="w-6 h-6" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Bienvenido a StockFlow</h1>
-          <p className="text-slate-500 text-sm">Gestiona tu inventario de forma inteligente.</p>
+          <p className="text-slate-500 text-sm">Sistema de gestión para vendedores.</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium leading-none text-slate-700">Email</label>
-            <Input name="email" type="email" placeholder="usuario@stockflow.app" required />
+            <label className="text-sm font-medium leading-none text-slate-700">Usuario</label>
+            <Input name="username" type="text" placeholder="Ej: unai" required autoCapitalize="none" autoCorrect="off" />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium leading-none text-slate-700">Contraseña</label>
             <Input name="password" type="password" required />
           </div>
           {error && <div className="text-sm text-red-600 flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {error}</div>}
-          <Button className="w-full" type="submit" disabled={loading}>{loading ? 'Iniciando...' : 'Iniciar Sesión'}</Button>
+          <Button className="w-full" type="submit" disabled={loading}>{loading ? 'Iniciando...' : 'Entrar'}</Button>
         </form>
       </div>
     </div>

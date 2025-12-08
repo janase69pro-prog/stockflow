@@ -7,10 +7,22 @@ import { redirect } from 'next/navigation'
 // --- AUTH ---
 export async function login(formData: FormData) {
   const supabase = await createClient()
-  const email = formData.get('email') as string
+  
+  // LOGIC: Convert Username to Email
+  let input = formData.get('username') as string // Changed from 'email'
+  if (!input) input = formData.get('email') as string // Fallback
+  
+  // Clean input
+  input = input.trim().toLowerCase()
+  
+  // If user typed just "unai", we append "@stockflow.local"
+  const email = input.includes('@') ? input : `${input}@stockflow.local`
+  
   const password = formData.get('password') as string
+
   const { error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) return { error: error.message }
+  if (error) return { error: "Usuario o contraseña incorrectos" } // Generic error for security
+  
   revalidatePath('/', 'layout')
   redirect('/dashboard')
 }
@@ -19,6 +31,18 @@ export async function signOut() {
   const supabase = await createClient()
   await supabase.auth.signOut()
   redirect('/')
+}
+
+export async function updatePassword(newPassword: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized' }
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword })
+  if (error) return { error: error.message }
+  await supabase.from('profiles').update({ must_change_password: false }).eq('id', user.id)
+  revalidatePath('/', 'layout')
+  redirect('/dashboard')
 }
 
 // --- PRODUCT (ADMIN) ---
@@ -52,20 +76,18 @@ export async function restockProduct(productId: string, quantity: number) {
   return { success: true }
 }
 
-// --- SELLER ACTIONS (V2.5 BULK) ---
+// --- SELLER ACTIONS ---
 export async function withdrawItem(productId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
 
-  // 1. Data & Checks
   const { data: product } = await supabase.from('products').select('*').eq('id', productId).single()
   const { data: profile } = await supabase.from('profiles').select('invested_amount').eq('id', user.id).single()
   
   if (!product || !profile) return { error: 'Error data' }
   if (product.current_stock < quantity) return { error: `Solo quedan ${product.current_stock} unidades` }
 
-  // 2. Credit Check
   const { data: myHolds } = await supabase.from('inventory_holds').select('quantity, products(cost_price)').eq('user_id', user.id).eq('status', 'held')
   let currentHeldValue = 0
   myHolds?.forEach((h: any) => { currentHeldValue += h.quantity * (h.products?.cost_price || 0) })
@@ -73,10 +95,9 @@ export async function withdrawItem(productId: string, quantity: number = 1) {
   const costOfBatch = product.cost_price * quantity
   
   if ((currentHeldValue + costOfBatch) > profile.invested_amount) {
-    return { error: `Límite excedido. Te faltan crédito para retirar ${quantity} uds.` }
+    return { error: `Límite excedido. Te falta crédito.` }
   }
 
-  // 3. Exec
   await supabase.from('products').update({ current_stock: product.current_stock - quantity }).eq('id', productId)
   
   const { data: hold } = await supabase.from('inventory_holds').select('*').eq('user_id', user.id).eq('product_id', productId).eq('status', 'held').single()
@@ -128,7 +149,6 @@ export async function sellItem(productId: string, finalPricePerUnit: number, qua
     await supabase.from('inventory_holds').insert({ user_id: user.id, product_id: productId, quantity, status: 'sold' })
   }
 
-  // Log as one transaction (or multiple? One is cleaner for feed)
   await supabase.from('transactions').insert({
     user_id: user.id, product_id: productId, type: 'sold', quantity, actual_price: finalPricePerUnit * quantity
   })

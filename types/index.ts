@@ -6,6 +6,7 @@ export interface Profile {
   name: string;
   role: Role;
   invested_amount: number;
+  must_change_password?: boolean;
   created_at: string;
 }
 
