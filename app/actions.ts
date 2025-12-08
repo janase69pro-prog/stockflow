@@ -181,7 +181,11 @@ export async function transferItem(productId: string, targetUserId: string, quan
 }
 
 // --- CAPITAL MANAGEMENT (BATCHES) ---
-export async function registerBatchContribution(batchName: string, contributions: { userId: string, amount: number }[]) {
+export async function registerBatchContribution(
+  batchName: string, 
+  contributions: { userId: string, amount: number }[],
+  stockChanges: { productId: string, quantity: number }[]
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Unauthorized' }
@@ -190,18 +194,14 @@ export async function registerBatchContribution(batchName: string, contributions
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'admin') return { error: 'Unauthorized' }
 
+  // 1. Process Contributions (Money)
   for (const contrib of contributions) {
     if (contrib.amount > 0) {
-      // 1. Log entry
-      const { error: logError } = await supabase.from('capital_entries').insert({
+      await supabase.from('capital_entries').insert({
         batch_name: batchName,
         user_id: contrib.userId,
         amount: contrib.amount
       })
-      if (logError) console.error('Error logging capital:', logError)
-
-      // 2. Update User Balance (Invested Amount) - Increment
-      // Fetch current to add safely (or use RPC if strict concurrency needed, but loop is fine here)
       const { data: current } = await supabase.from('profiles').select('invested_amount').eq('id', contrib.userId).single()
       if (current) {
         await supabase.from('profiles').update({ 
@@ -211,6 +211,46 @@ export async function registerBatchContribution(batchName: string, contributions
     }
   }
 
+  // 2. Process Stock (Inventory)
+  for (const stock of stockChanges) {
+    if (stock.quantity > 0) {
+      // Increment stock
+      const { data: product } = await supabase.from('products').select('current_stock').eq('id', stock.productId).single()
+      if (product) {
+        await supabase.from('products').update({ 
+          current_stock: product.current_stock + stock.quantity 
+        }).eq('id', stock.productId)
+        
+        // Log RESTOCK transaction linked to this batch logic (indirectly)
+        await supabase.from('transactions').insert({
+          user_id: user.id,
+          product_id: stock.productId,
+          type: 'restock',
+          quantity: stock.quantity
+        })
+      }
+    }
+  }
+
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+export async function updateProduct(productId: string, data: { name: string, variation: string, cost_price: number, price: number }) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('products').update(data).eq('id', productId)
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+export async function deleteProduct(productId: string) {
+  const supabase = await createClient()
+  // Check constraints first? Supabase will fail if foreign keys exist.
+  // We might need to delete related transactions first or cascade. 
+  // For safety, we let DB decide. If fail, we tell user.
+  const { error } = await supabase.from('products').delete().eq('id', productId)
+  if (error) return { error: "No se puede borrar: Hay historial asociado." }
   revalidatePath('/dashboard')
   return { success: true }
 }
